@@ -1,0 +1,16 @@
+version = 1
+revision = 3
+requires-python = ">=3.12"
+
+[[package]]
+name = "flies-search-agent"
+version = "0.1.0"
+source = { virtual = "." }
+
+name = "numpy"
+version = "1.26.4"
+source = { registry = "pypi" }
+
+name = "protobuf"
+version = "7.35.0"
+source = { registry = "pypi" }
