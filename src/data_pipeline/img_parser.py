@@ -1,4 +1,5 @@
 import os
+import logging
 
 # 修改 PaddlePaddle/PaddleOCR 默认下载路径缓存环境变量，防止写满 C 盘
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -12,6 +13,11 @@ os.environ["HOME"] = PADDLE_CACHE_DIR
 # 修复新版 PaddlePaddle (3.0+) 带来的内核 OneDNN/PIR 未实现错误报错
 os.environ["FLAGS_enable_pir_api"] = "0"
 os.environ["FLAGS_use_mkldnn"] = "0"
+# 兼容部分 PaddleOCR 依赖生成的旧 protobuf 文件。
+os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
+
+logging.getLogger("ppocr").setLevel(logging.ERROR)
+logging.getLogger("paddleocr").setLevel(logging.ERROR)
 
 try:
     # 需要安装 paddlepaddle 和 paddleocr
@@ -29,9 +35,12 @@ class ImageParser:
     def __init__(self):
         if PADDLE_AVAILABLE:
             # 开启方向分类(use_angle_cls)，识别中文与英文
-            # 去除 show_log 参数以适配不同版本的 PaddleOCR
-            self.ocr = PaddleOCR(use_angle_cls=True, lang="ch")
-            print("[*] PaddleOCR 引擎已就绪。")
+            try:
+                self.ocr = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
+            except TypeError:
+                self.ocr = PaddleOCR(use_angle_cls=True, lang="ch")
+            if os.getenv("AGENT_DEBUG", "").lower() in {"1", "true", "yes"}:
+                print("[*] PaddleOCR 引擎已就绪。")
         else:
             self.ocr = None
             print("[-] 未安装 PaddleOCR，图片文字识别功能不可用。请运行 uv pip install paddlepaddle paddleocr")

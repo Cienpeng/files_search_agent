@@ -63,7 +63,7 @@ class InitModel:
         model_provider: str,
         base_url: str = None,
         api_key: str = None,
-        temperature: float = 1.0,
+        temperature: float = 0.5,
     ):
         self.model_name = model_name
         self.model_provider = model_provider
@@ -90,29 +90,29 @@ class InitModel:
             return None
 
 
-class InitAgent:
-    """
-    初始化agent类
-    """
+# class InitAgent:
+#     """
+#     初始化agent类
+#     """
 
-    def __init__(self):
-        self.system_prompt = """
-The user will provide some exam text. Please parse the "question" and "answer" and output them in JSON format. 
+#     def __init__(self):
+#         self.system_prompt = """
+# The user will provide some exam text. Please parse the "question" and "answer" and output them in JSON format. 
 
-EXAMPLE INPUT: 
-Which is the highest mountain in the world? Mount Everest.
+# EXAMPLE INPUT: 
+# Which is the highest mountain in the world? Mount Everest.
 
-EXAMPLE JSON OUTPUT:
-{
-    "question": "Which is the highest mountain in the world?",
-    "answer": "Mount Everest"
-} 
-"""
+# EXAMPLE JSON OUTPUT:
+# {
+#     "question": "Which is the highest mountain in the world?",
+#     "answer": "Mount Everest"
+# } 
+# """
 
-    def create_agent(self, chat_model):
-        try:
-            agent = create_agent(model=chat_model, system_prompt=self.system_prompt)
-            return agent
-        except Exception as e:
-            logging.error(f"Error creating agent: {e}")
-            return None
+#     def create_agent(self, chat_model):
+#         try:
+#             agent = create_agent(model=chat_model, system_prompt=self.system_prompt)
+#             return agent
+#         except Exception as e:
+#             logging.error(f"Error creating agent: {e}")
+#             return None

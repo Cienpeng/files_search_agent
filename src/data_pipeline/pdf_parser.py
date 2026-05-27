@@ -1,5 +1,6 @@
 import os
 import fitz  # PyMuPDF
+import tempfile
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 class PDFParser:
@@ -14,7 +15,7 @@ class PDFParser:
             separators=["\n\n", "\n", "。", "！", "？", " ", ""]
         )
 
-    def parse_and_chunk(self, file_path: str):
+    def parse_and_chunk(self, file_path: str, enable_ocr: bool = True):
         """
         读取本地 PDF 并切片，同时绑定元数据(Metadata)。
         Returns:
@@ -26,23 +27,42 @@ class PDFParser:
             
         doc = fitz.open(file_path)
         chunks = []
+        img_parser = None
+        temp_dir = None
         
-        for page_num, page in enumerate(doc):
-            # 获取文本并清理首尾多余空白
-            page_text = page.get_text("text").strip()
-            
-            if not page_text:
-                # TODO: 如果页面为空，说明可能是扫描件，预留接口后续对接 PaddleOCR 处理纯图PDF页
-                continue
-                
-            # 执行切片
-            page_chunks = self.text_splitter.split_text(page_text)
-            for chunk_text in page_chunks:
-                chunks.append({
-                    "text": chunk_text,
-                    "source": file_path,
-                    "page": page_num + 1
-                })
+        try:
+            for page_num, page in enumerate(doc):
+                # 获取文本并清理首尾多余空白
+                page_text = page.get_text("text").strip()
+
+                if not page_text and enable_ocr:
+                    if img_parser is None:
+                        from data_pipeline.img_parser import ImageParser
+
+                        img_parser = ImageParser()
+                    if temp_dir is None:
+                        temp_dir = tempfile.TemporaryDirectory()
+
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                    page_img_path = os.path.join(temp_dir.name, f"page_{page_num + 1}.png")
+                    pix.save(page_img_path)
+                    page_text = img_parser.extract_text(page_img_path).strip()
+
+                if not page_text:
+                    continue
+
+                # 执行切片
+                page_chunks = self.text_splitter.split_text(page_text)
+                for chunk_text in page_chunks:
+                    chunks.append({
+                        "text": chunk_text,
+                        "source": file_path,
+                        "page": page_num + 1
+                    })
+        finally:
+            doc.close()
+            if temp_dir is not None:
+                temp_dir.cleanup()
         
         return chunks
 

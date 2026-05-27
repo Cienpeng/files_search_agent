@@ -82,19 +82,42 @@ class MilvusManager:
         )
         return res
 
+    def _path_filter_candidates(self, file_path: str):
+        def escape_filter_value(value: str) -> str:
+            return value.replace("\\", "\\\\").replace('"', '\\"')
+
+        candidates = []
+        normalized_path = file_path.replace("\\", "/")
+        for candidate in (normalized_path, file_path):
+            if candidate not in candidates:
+                candidates.append(candidate)
+        return [f'source_path == "{escape_filter_value(candidate)}"' for candidate in candidates]
+
+    def delete_text_by_path(self, file_path: str):
+        """删除指定文件路径对应的文本/OCR索引，避免重复入库。"""
+        for filter_expr in self._path_filter_candidates(file_path):
+            self.client.delete(
+                collection_name=self.text_collection,
+                filter=filter_expr
+            )
+
+    def delete_image_by_path(self, file_path: str):
+        """删除指定文件路径对应的图片特征索引，避免重复入库。"""
+        for filter_expr in self._path_filter_candidates(file_path):
+            self.client.delete(
+                collection_name=self.image_collection,
+                filter=filter_expr
+            )
+
     def query_text_by_path(self, file_path: str):
         """基于文件的绝对路径，直接从知识库中查询它的所有文本块"""
-        res = self.client.query(
-            collection_name=self.text_collection,
-            filter=f'source_path == "{file_path.replace(chr(92), "/")}"',
-            output_fields=["text"]
-        )
-        # 如果未找到将 \ 替换为 / 的结果，再尝试原始路径匹配防漏
-        if not res:
+        for filter_expr in self._path_filter_candidates(file_path):
             res = self.client.query(
                 collection_name=self.text_collection,
-                filter=f'source_path == "{file_path}"',
+                filter=filter_expr,
                 output_fields=["text"]
             )
-        return res
+            if res:
+                return res
+        return []
 

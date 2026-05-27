@@ -10,7 +10,8 @@ from files_index import file_index
 @tool
 def search_file_in_d_drive(filename_keyword: str) -> str:
     """
-    当用户要求“找一个名为 XXX 的文件”，或者模糊匹配系统本地的文件名时调用此工具。
+    仅当用户明确要求查找文件路径、文件位置、某文件在哪里，或者知识库检索未命中后需要按文件名兜底搜索时，调用此工具。
+    如果用户同时询问文件内容、课程安排、文档里的信息、图片里的文字等内容问题，应优先使用 search_local_knowledge 或 read_local_file_content，而不是先调用本工具。
     出于安全规范，该工具通过底层命令限制，【仅允许】且【强制只】在本地的 D 盘 (D:\\) 内进行搜索，禁止越权搜索其它盘符。
     
     Args:
@@ -31,8 +32,8 @@ def search_file_in_d_drive(filename_keyword: str) -> str:
             
             output_lines = []
             for item in results[:max_display]:
-                # 假设 results 返回结构为 [{'path': '...', 'name': '...'}, ...] 或许是纯字符串，
-                # 根据 flies_index.py 示例返回的应该是 dict 或者至少能序列化为 JSON 的内容 
+                
+                # 根据 flies_index.py 示例返回的是 dict 
                 output_lines.append(json.dumps(item, ensure_ascii=False))
                 
             msg = f"✅ 成功在 D 盘找到了 {total} 个与 '{filename_keyword}' 相关的文件。\n"

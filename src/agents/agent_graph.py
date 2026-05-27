@@ -2,7 +2,7 @@ import sys
 import os
 from typing import Annotated, Sequence
 from typing_extensions import TypedDict
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -14,26 +14,43 @@ from tools.tool_read_full_document import read_local_file_content
 from tools.tool_semantic_search import search_local_knowledge
 from tools.tool_image_search import search_local_image_by_content
 from tools.tool_file_search import search_file_in_d_drive
+from tools.tool_index_file import index_local_file_to_knowledge_base
 from load_model import InitModel
 from memory_DB import AgentMemoryManager
 
+SYSTEM_PROMPT = """
+You are a local file retrieval agent. You are connected to a large language model, but you have local tools that can read files, search the knowledge base, search images, and extract OCR text from images.
+
+Important rules:
+1. When the user asks you to recognize, read, extract, or search text inside an image, do not say that you cannot read images or that the model is not multimodal.
+2. If the user provides an absolute image path, you must call read_local_file_content(file_path=...) so the local OCR/indexing tool can read the image text.
+3. If the user only describes image content or an image filename, use search_file_in_d_drive or search_local_knowledge to find candidate paths first, then call read_local_file_content for the specific image.
+4. If the user wants to search images by visual content, use search_local_image_by_content. If the user wants to search text inside images, prefer search_local_knowledge or read_local_file_content.
+5. When the user asks about content inside a file or local material, such as what a document says, which classes are on a weekday, or whether a document contains certain information, call search_local_knowledge first, even if the user says "find" or "look for".
+6. Only call search_file_in_d_drive to scan D drive filenames when search_local_knowledge has no hit, or when the user explicitly asks only for a file path/location.
+7. If search_local_knowledge has no hit but search_file_in_d_drive finds a concrete PDF/image path, call index_local_file_to_knowledge_base to add that file to the local knowledge base immediately, then continue reading or searching.
+8. If the user asks you to find a file and answer a question about its contents, after finding the path you must call read_local_file_content or index_local_file_to_knowledge_base. Do not stop at filename search results.
+9. If a tool returns an empty result or an error, report the local index/OCR miss accurately and suggest the next step.
+"""
+
 # === 1. 定义 Graph 的状态 (State) ===
-# langgraph 要求我们在节点中传递的上下文类型
+# langgraph 要求在节点中传递的上下文类型
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]  # 对话流消息，使用 add_messages 实现上下文追加
 
 # === 2. 初始化大模型与绑定 Tools ===
 def init_agent_llm():
-    # 利用你写好的 load_model.py 初始化指定的大模型
-    llm_initializer = InitModel(model_name="deepseek-chat", model_provider="openai", base_url=None, api_key=None)
+    # 利用 load_model.py 初始化指定的大模型
+    llm_initializer = InitModel(model_name="mimo-v2.5-pro", model_provider="openai", base_url=None, api_key=None)
     llm = llm_initializer.create_chat_model()
     
     # 把我们的自定义 Tool 注册进来
     tools = [
-        search_file_in_d_drive,           # 【工具1】纯找文件名
-        search_local_knowledge,           # 【工具2】查找知识（文字相关：涵盖从PDF或图片OCR提炼出来的字）
+        search_local_knowledge,           # 【工具1】优先查找已入库知识（PDF/图片OCR内容）
+        search_file_in_d_drive,           # 【工具2】纯找文件名
         search_local_image_by_content,    # 【工具3】找画面内容（CN-CLIP相关）
-        read_local_file_content           # 【工具4】精确通读某PDF的指定页或提取图片OCR文字
+        read_local_file_content,          # 【工具4】精确通读某PDF的指定页或提取图片OCR文字
+        index_local_file_to_knowledge_base # 【工具5】找到文件但未入库时，现场建立索引
     ]
     llm_with_tools = llm.bind_tools(tools)
     return llm_with_tools, tools
@@ -44,7 +61,8 @@ def build_agent_graph(checkpointer=None):
     
     # 核心推理节点
     def chatbot_node(state: AgentState):
-        response = llm_with_tools.invoke(state["messages"])
+        messages = [SystemMessage(content=SYSTEM_PROMPT), *state["messages"]]
+        response = llm_with_tools.invoke(messages)
         return {"messages": [response]}
         
     # 构建图 Workflow
@@ -70,13 +88,15 @@ def build_agent_graph(checkpointer=None):
 
 def chat_run():
     """本地简易测试入口"""
+    debug_mode = os.getenv("AGENT_DEBUG", "").lower() in {"1", "true", "yes"}
+
     # 1. 实例化 SQLite 记忆管理器
     memory_mgr = AgentMemoryManager()
     
     # 2. 编译带有 Checkpointer 记忆存储功能的 Agent 图
     graph = build_agent_graph(checkpointer=memory_mgr.get_checkpointer())
     
-    print("🤖 Agent已启动，支持功能：\n1.全局D盘纯文件名搜索\n2.语义搜索(找文档内容/图片上的人话)\n3.找照片(搜图画面特征)\n4.通读特定PDF\n输入 'exit' 退出。")
+    print("🤖 Agent已启动，支持功能：\n1.全局磁盘纯文件名搜索\n2.语义搜索(找文档内容/图片上的人话)\n3.找照片(搜图画面特征)\n4.通读特定PDF\n输入 'exit' 退出。")
     print("-" * 50)
     
     # 打印所有的Session历史
@@ -124,7 +144,7 @@ def chat_run():
     
     while True:
         try:
-            user_input = input("User >> ")
+            user_input = input("User 🥶>> ")
             if user_input.lower() in ["quit", "exit", "q"]:
                 print("Goodbye!")
                 break
@@ -146,13 +166,15 @@ def chat_run():
                     latest_msg = event["messages"][-1]
                     if latest_msg.type == "ai" and not latest_msg.tool_calls:
                         # 最终的AI直接答复
-                        print(f"AI >> {latest_msg.content}\n")
+                        print(f"AI 🤔>> {latest_msg.content}\n")
                     elif latest_msg.type == "ai" and latest_msg.tool_calls:
                         # 指示它要调用的工具
-                        print(f"🛠️ [Agent Action] AI打算调用工具 -> {[t['name'] for t in latest_msg.tool_calls]}")
+                        if debug_mode:
+                            print(f"🛠️ [Agent Action] AI打算调用工具 -> {[t['name'] for t in latest_msg.tool_calls]}")
                     elif latest_msg.type == "tool":
                         # 工具的原始底层返回
-                        print(f"⚙️ [Tool Result] -> (由于文本过长不打印在终端，移交回模型层...)")
+                        if debug_mode:
+                            print("🔄 [Tool Result] -> (由于文本过长不打印在终端，移交回模型层...)")
         except Exception as e:
             print(f"❌ 运行发生错误: {str(e)}")
 

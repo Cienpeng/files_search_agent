@@ -1,13 +1,16 @@
-# 为文件生成索引树import ctypes, json
+# 为文件生成索引树
 import ctypes
 import json
 import os
 
 # 获取脚本所在目录，然后获取DLL的完整路径
+'''
+此功能刚需管理员权限，否则返回字典为空
+'''
 
 
 # 盘符，通配符，是否区分大小写（0表示不区分，1表示区分）
-# ptr = dll.NtfsSearchJson("D:/论文", "*.pdf", 0)
+# ptr = dll.NtfsSearchJson("D:", "*.pdf", 0)
 # json_str = ctypes.wstring_at(ptr)
 # dll.NtfsFreeJson(ptr)
 
