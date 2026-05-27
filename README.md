@@ -150,7 +150,8 @@ resources/
 - `models/` 存放本地 Embedding、CLIP 和 OCR 相关模型缓存。
 - `resources/` 存放 SQLite 记忆库和 Milvus Lite 向量数据库。
 
-## 当前注意事项
+## 注意事项
 - NTFS 文件名搜索需要管理员权限。
 - PaddleOCR 首次运行可能会下载或加载模型，耗时较长。
+- lmdb和cn-clip包存在冲突，手动安装lmdb包即可
 - 对复杂表格 PDF，OCR 文本可能会丢失原始二维表格结构，回答课程表类问题时可能需要模型根据 OCR 顺序推断列关系。
